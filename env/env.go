@@ -4,11 +4,13 @@ import (
 	"github.com/apex/log"
 	"github.com/joho/godotenv"
 	"os"
+	"strings"
 )
 
 type EnvConfig struct {
 	Port string
 	Token string
+	Mode string
 }
 
 func New() *EnvConfig {
@@ -20,6 +22,7 @@ func New() *EnvConfig {
 	return &EnvConfig{
 		Port: getEnvWithDefault("PORT", "8080"),
 		Token: getEnvWithDefault("TOKEN", "secret"),
+		Mode: strings.ToUpper(getEnvWithDefault("MODE", "production")),
 	}
 }
 

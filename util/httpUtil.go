@@ -8,3 +8,9 @@ func JsonWithStatus(c *gin.Context, status int, json *gin.H) {
 		"data": json,
 	})
 }
+
+func Status(c *gin.Context, status int) {
+	c.JSON(status, &gin.H{
+		"status": status,
+	})
+}

@@ -10,6 +10,7 @@ func VerifyToken(token string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if c.GetHeader("Authorization") != "Bearer " + token {
 			util.JsonWithStatus(c, http.StatusForbidden, &gin.H{})
+			c.Abort()
 		}
 	}
 }
