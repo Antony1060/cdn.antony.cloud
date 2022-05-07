@@ -3,19 +3,16 @@ package main
 import (
 	"cdn/db"
 	"cdn/env"
+	"cdn/filesystem"
 	"cdn/routes"
 	"cdn/routes/middleware"
 	"cdn/util"
-	"fmt"
 	"github.com/apex/log"
 	"github.com/gofiber/fiber/v2"
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
-
-// TODO: create a filesystem struct that allows for quick file lookups, password checks and file writes
 
 func main() {
 	err := generateDirs()
@@ -32,32 +29,7 @@ func main() {
 }
 
 func loadRoutes(app *fiber.App, env *env.EnvConfig) {
-	app.Use(func(c *fiber.Ctx) error {
-		start := time.Now()
-		err := c.Next()
-
-		duration := time.Since(start)
-		latencyFormatted := ""
-		if duration.Microseconds() > 1000 {
-			latencyFormatted = fmt.Sprintf("%dms", duration.Milliseconds())
-		} else {
-			latencyFormatted = fmt.Sprintf("%dµs", duration.Microseconds())
-		}
-
-		f := log.Fields{
-			"client":  c.IP(),
-			"status":  c.Context().Response.StatusCode(),
-			"latency": latencyFormatted,
-		}
-
-		if err != nil {
-			f["error"] = err
-		}
-
-		log.WithFields(f).Debugf("%s %s", util.MethodColor(c.Method())+" "+c.Method()+" "+util.ResetColor(), c.Path())
-
-		return err
-	})
+	app.Use(middleware.DefaultLogger)
 
 	nextFunc := func(c *fiber.Ctx) bool {
 		// TODO: handle password protected
@@ -77,14 +49,21 @@ func loadRoutes(app *fiber.App, env *env.EnvConfig) {
 		Next: nextFunc,
 	})
 
+	h := routes.Handler{
+		FileSystem: &filesystem.FileSystem{
+			IndexDir:  "./files/index",
+			SecretDir: "./files/secret",
+		},
+	}
+
 	api := app.Group("/api")
 	{
 		// TODO: error if already exists, else write if override is present
-		api.Post("/add", middleware.VerifyToken(env.Token), routes.AddFile())
+		api.Post("/add", middleware.VerifyToken(env.Token), h.AddFile())
 		// TODO: delete file
-		api.Post("/delete", middleware.VerifyToken(env.Token), routes.RemoveFile())
+		api.Post("/delete", middleware.VerifyToken(env.Token), h.RemoveFile())
 		// TODO: list all files
-		api.Get("/get", middleware.VerifyToken(env.Token), routes.GetFiles())
+		api.Get("/get", middleware.VerifyToken(env.Token), h.GetFiles())
 	}
 }
 

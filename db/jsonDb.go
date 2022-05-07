@@ -11,8 +11,8 @@ import (
 var data *Database
 
 type Database struct {
-	FileDeathUnix map[string]int `json:"file_death_unix"`
-	FilePasswords map[string]int `json:"file_passwords"`
+	FileDeathUnix map[string]int    `json:"file_death_unix"`
+	FilePasswords map[string]string `json:"file_passwords"`
 }
 
 func (db *Database) Save() error {
@@ -57,7 +57,7 @@ func Get() *Database {
 func Init() error {
 	db := &Database{
 		FileDeathUnix: map[string]int{},
-		FilePasswords: map[string]int{},
+		FilePasswords: map[string]string{},
 	}
 	err := db.Load()
 	err = db.Save()

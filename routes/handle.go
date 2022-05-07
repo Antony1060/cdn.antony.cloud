@@ -1,16 +1,25 @@
 package routes
 
 import (
+	"cdn/filesystem"
 	"cdn/util"
 	"github.com/gofiber/fiber/v2"
 	"net/http"
 )
 
 type addOpts struct {
-	Index bool `json:"index"`
+	Index         bool   `json:"index" default:"false"`
+	TimeTillDeath int    `json:"timeTillDeath" default:"-1"`
+	Name          string `json:"name" default:""`
+	Password      string `json:"password" default:""`
+	Override      bool   `json:"override" default:"false"`
 }
 
-func AddFile() fiber.Handler {
+type Handler struct {
+	*filesystem.FileSystem
+}
+
+func (h *Handler) AddFile() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		f, err := c.FormFile("file")
 		if err != nil {
@@ -35,14 +44,19 @@ func AddFile() fiber.Handler {
 	}
 }
 
-func RemoveFile() fiber.Handler {
+func (h *Handler) RemoveFile() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		return util.Status(c, http.StatusOK)
 	}
 }
 
-func GetFiles() fiber.Handler {
+func (h *Handler) GetFiles() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		return util.Status(c, http.StatusOK)
+		lookup, err := h.GetAll()
+		if err != nil {
+			return err
+		}
+
+		return util.JsonWithStatus(c, http.StatusOK, lookup)
 	}
 }
