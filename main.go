@@ -5,12 +5,17 @@ import (
 	"cdn/env"
 	"cdn/routes"
 	"cdn/routes/middleware"
+	"cdn/util"
+	"fmt"
 	"github.com/apex/log"
-	"github.com/gin-contrib/static"
-	"github.com/gin-gonic/gin"
+	"github.com/gofiber/fiber/v2"
 	"os"
 	"path/filepath"
+	"strings"
+	"time"
 )
+
+// TODO: create a filesystem struct that allows for quick file lookups, password checks and file writes
 
 func main() {
 	err := generateDirs()
@@ -26,43 +31,91 @@ func main() {
 	startServer(env.New())
 }
 
-func loadRoutes(router *gin.Engine, env *env.EnvConfig) {
-	// logging
-	router.Use(gin.LoggerWithFormatter(func(params gin.LogFormatterParams) string {
-		log.WithFields(log.Fields{
-			"client": params.ClientIP,
-			"status": params.StatusCode,
-			"latency": params.Latency,
-		}).Debugf("%s %s", params.MethodColor() + params.Method + params.ResetColor(), params.Path)
+func loadRoutes(app *fiber.App, env *env.EnvConfig) {
+	app.Use(func(c *fiber.Ctx) error {
+		start := time.Now()
+		err := c.Next()
 
-		return ""
-	}))
+		duration := time.Since(start)
+		latencyFormatted := ""
+		if duration.Microseconds() > 1000 {
+			latencyFormatted = fmt.Sprintf("%dms", duration.Milliseconds())
+		} else {
+			latencyFormatted = fmt.Sprintf("%dµs", duration.Microseconds())
+		}
 
-	router.Use(static.Serve("/", static.LocalFile("./files/index", true)))
+		f := log.Fields{
+			"client":  c.IP(),
+			"status":  c.Context().Response.StatusCode(),
+			"latency": latencyFormatted,
+		}
 
-	api := router.Group("/api")
-	{
-		api.POST("/add", middleware.VerifyToken(env.Token), routes.AddFile())
-		api.POST("/delete", middleware.VerifyToken(env.Token), routes.RemoveFile())
-		api.GET("/get", middleware.VerifyToken(env.Token), routes.GetFiles())
+		if err != nil {
+			f["error"] = err
+		}
+
+		log.WithFields(f).Debugf("%s %s", util.MethodColor(c.Method())+" "+c.Method()+" "+util.ResetColor(), c.Path())
+
+		return err
+	})
+
+	nextFunc := func(c *fiber.Ctx) bool {
+		// TODO: handle password protected
+		return false
 	}
 
-	log.Infof("Loaded %d routes", len(router.Routes()))
+	// ./files/index files are shown in the public browsable index
+	app.Static("/", "./files/index", fiber.Static{
+		Browse: true,
+		Next:   nextFunc,
+	})
+
+	// files here are not shown in the browsable index
+	// this is intended as a default location for file if `index` is not set
+	//   Note for CLI: if not parameters are set, file should be uploaded to here with a random hash
+	app.Static("/secret", "./files/secret", fiber.Static{
+		Next: nextFunc,
+	})
+
+	api := app.Group("/api")
+	{
+		// TODO: error if already exists, else write if override is present
+		api.Post("/add", middleware.VerifyToken(env.Token), routes.AddFile())
+		// TODO: delete file
+		api.Post("/delete", middleware.VerifyToken(env.Token), routes.RemoveFile())
+		// TODO: list all files
+		api.Get("/get", middleware.VerifyToken(env.Token), routes.GetFiles())
+	}
 }
 
 func startServer(env *env.EnvConfig) {
-	if env.Mode == "DEBUG" {
-		gin.SetMode(gin.DebugMode)
-	} else {
-		gin.SetMode(gin.ReleaseMode)
+	if strings.ToLower(env.Mode) == "debug" {
+		log.SetLevel(log.DebugLevel)
 	}
-	g := gin.New()
-	loadRoutes(g, env)
-	log.WithError(g.Run(":" + env.Port)).Fatal("HTTP server ended")
+
+	app := fiber.New(fiber.Config{
+		ServerHeader: "go-fiber",
+		ErrorHandler: func(c *fiber.Ctx, err error) error {
+			code := fiber.StatusInternalServerError
+
+			if e, ok := err.(*fiber.Error); ok {
+				code = e.Code
+			}
+
+			return util.ErrorWithStatus(c, code, err)
+		},
+	})
+	loadRoutes(app, env)
+	log.WithError(app.Listen(":" + env.Port)).Fatal("HTTP server ended")
 }
 
 func generateDirs() error {
 	err := os.MkdirAll(filepath.Join("files", "index"), os.ModePerm)
+	if err != nil {
+		return err
+	}
+
+	err = os.MkdirAll(filepath.Join("files", "secret"), os.ModePerm)
 	if err != nil {
 		return err
 	}

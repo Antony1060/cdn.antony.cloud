@@ -3,19 +3,19 @@ package db
 import (
 	"bufio"
 	"encoding/json"
-	"fmt"
 	"github.com/apex/log"
 	"os"
 	"path/filepath"
 )
 
-var data *JsonDb
+var data *Database
 
-type JsonDb struct {
-	TTLs map[string]int `json:"ttls"`
+type Database struct {
+	FileDeathUnix map[string]int `json:"file_death_unix"`
+	FilePasswords map[string]int `json:"file_passwords"`
 }
 
-func (db *JsonDb) Save() error {
+func (db *Database) Save() error {
 	f, err := os.Create(filepath.Join(".", "data.json"))
 	if err != nil {
 		return err
@@ -27,7 +27,6 @@ func (db *JsonDb) Save() error {
 	if err != nil {
 		return err
 	}
-	fmt.Println(string(j[:]))
 
 	w := bufio.NewWriter(f)
 	defer w.Flush()
@@ -39,7 +38,7 @@ func (db *JsonDb) Save() error {
 	return nil
 }
 
-func (db *JsonDb) Load() error {
+func (db *Database) Load() error {
 	bytes, err := os.ReadFile(filepath.Join(".", "data.json"))
 	if err != nil {
 		return nil
@@ -51,12 +50,15 @@ func (db *JsonDb) Load() error {
 	return nil
 }
 
-func Get() *JsonDb {
+func Get() *Database {
 	return data
 }
 
 func Init() error {
-	db := &JsonDb{ TTLs: map[string]int{} }
+	db := &Database{
+		FileDeathUnix: map[string]int{},
+		FilePasswords: map[string]int{},
+	}
 	err := db.Load()
 	err = db.Save()
 	if err != nil {

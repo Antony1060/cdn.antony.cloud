@@ -2,43 +2,47 @@ package routes
 
 import (
 	"cdn/util"
-	"github.com/gin-gonic/gin"
+	"github.com/gofiber/fiber/v2"
+	"net/http"
 )
 
-func AddFile() gin.HandlerFunc {
-	return func(c *gin.Context) {
+type addOpts struct {
+	Index bool `json:"index"`
+}
+
+func AddFile() fiber.Handler {
+	return func(c *fiber.Ctx) error {
 		f, err := c.FormFile("file")
 		if err != nil {
-			util.JsonWithStatus(c, 400, &gin.H{
-				"error": "File not found",
-			})
-			return
+			return util.WrapFiberError(http.StatusBadRequest, err)
 		}
 
-		if c.PostForm("index") == "true" {
-			err := c.SaveUploadedFile(f, "./files/index/" + f.Filename)
+		args := addOpts{}
+
+		if err = c.BodyParser(&args); err != nil {
+			return util.WrapFiberError(http.StatusBadRequest, err)
+		}
+
+		if args.Index {
+			err := c.SaveFile(f, "./files/index/"+f.Filename)
 			if err != nil {
-				util.JsonWithStatus(c, 500, &gin.H{
-					"error": "Couldn't save file: " + err.Error(),
-				})
-				return
+				return util.WrapFiberError(http.StatusInternalServerError, err)
 			}
-			util.Status(c, 201)
-			return
+			return util.Status(c, http.StatusCreated)
 		}
 
-		util.JsonWithStatus(c, 200, &gin.H{})
+		return util.Status(c, http.StatusOK)
 	}
 }
 
-func RemoveFile() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		util.JsonWithStatus(c, 200, &gin.H{})
+func RemoveFile() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		return util.Status(c, http.StatusOK)
 	}
 }
 
-func GetFiles() gin.HandlerFunc {
-	return func(c *gin.Context) {
-		util.JsonWithStatus(c, 200, &gin.H{})
+func GetFiles() fiber.Handler {
+	return func(c *fiber.Ctx) error {
+		return util.Status(c, http.StatusOK)
 	}
 }
