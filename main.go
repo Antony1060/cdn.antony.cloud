@@ -58,11 +58,8 @@ func loadRoutes(app *fiber.App, env *env.EnvConfig) {
 
 	api := app.Group("/api")
 	{
-		// TODO: error if already exists, else write if override is present
 		api.Post("/add", middleware.VerifyToken(env.Token), h.AddFile())
-		// TODO: delete file
 		api.Post("/delete", middleware.VerifyToken(env.Token), h.RemoveFile())
-		// TODO: list all files
 		api.Get("/get", middleware.VerifyToken(env.Token), h.GetFiles())
 	}
 }

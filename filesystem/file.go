@@ -44,7 +44,7 @@ func FromFile(dir, name string, index bool) (*File, error) {
 		return nil, err
 	}
 
-	open, err := os.Create(path)
+	open, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
