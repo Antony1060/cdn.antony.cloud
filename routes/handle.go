@@ -15,6 +15,11 @@ type addOpts struct {
 	Override      bool   `json:"override" default:"false"`
 }
 
+type removeOpts struct {
+	Name  string `json:"name"`
+	Index bool   `json:"index"`
+}
+
 type Handler struct {
 	*filesystem.FileSystem
 }
@@ -32,12 +37,8 @@ func (h *Handler) AddFile() fiber.Handler {
 			return util.WrapFiberError(http.StatusBadRequest, err)
 		}
 
-		if args.Index {
-			err := c.SaveFile(f, "./files/index/"+f.Filename)
-			if err != nil {
-				return util.WrapFiberError(http.StatusInternalServerError, err)
-			}
-			return util.Status(c, http.StatusCreated)
+		if err = h.CreateFile(f, args.Name, args.Password, args.TimeTillDeath, args.Index, args.Override); err != nil {
+			return err
 		}
 
 		return util.Status(c, http.StatusOK)
@@ -46,17 +47,36 @@ func (h *Handler) AddFile() fiber.Handler {
 
 func (h *Handler) RemoveFile() fiber.Handler {
 	return func(c *fiber.Ctx) error {
+		args := removeOpts{}
+
+		if err := c.BodyParser(&args); err != nil {
+			return util.WrapFiberError(http.StatusBadRequest, err)
+		}
+
+		if !h.Exists(args.Name, args.Index) {
+			return util.WrapFiberErrorText(http.StatusNotFound, "file not found")
+		}
+
+		f, err := h.Get(args.Name, args.Index)
+		if err != nil {
+			return err
+		}
+
+		if err = f.Delete(); err != nil {
+			return err
+		}
+
 		return util.Status(c, http.StatusOK)
 	}
 }
 
 func (h *Handler) GetFiles() fiber.Handler {
 	return func(c *fiber.Ctx) error {
-		lookup, err := h.GetAll()
+		all, err := h.GetAll()
 		if err != nil {
 			return err
 		}
 
-		return util.JsonWithStatus(c, http.StatusOK, lookup)
+		return util.JsonWithStatus(c, http.StatusOK, all)
 	}
 }

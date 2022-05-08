@@ -4,26 +4,19 @@ import (
 	"cdn/db"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"github.com/karrick/godirwalk"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/errgroup"
-	"io/ioutil"
+	"io"
+	"mime/multipart"
 	"os"
 	"path/filepath"
-	"strings"
 )
 
 type FileSystem struct {
 	IndexDir  string
 	SecretDir string
-}
-
-type File struct {
-	Name      string
-	HashHex   string
-	Password  string
-	DeathUnix int
-	Indexed   bool
 }
 
 type FileLookup struct {
@@ -66,36 +59,106 @@ func (fs *FileSystem) GetAll() (*FileLookup, error) {
 }
 
 func (fs *FileSystem) Exists(name string, index bool) bool {
-	return false // TODO
+	dir := fs.SecretDir
+	if index {
+		dir = fs.IndexDir
+	}
+
+	path, err := filepath.Abs(filepath.Join(dir, name))
+	if err != nil {
+		return false
+	}
+
+	_, err = os.Stat(path)
+	return err == nil
 }
 
-func (fs *FileSystem) CreateFile(f *os.File, password string, timeTillDeath int, saveNamed, indexed bool) error {
-	return nil // TODO
+func (fs *FileSystem) CreateFile(header *multipart.FileHeader, name, password string, timeTillDeath int, indexed, override bool) error {
+	database := db.Get()
+
+	dir := fs.SecretDir
+	if indexed {
+		dir = fs.IndexDir
+	}
+
+	f, err := header.Open()
+	if err != nil {
+		return err
+	}
+
+	h := sha256.New()
+	if _, err = io.Copy(h, f); err != nil {
+		return err
+	}
+
+	sum := h.Sum(nil)
+
+	if name == "" {
+		name = hex.EncodeToString(sum) + filepath.Ext(header.Filename)
+	}
+
+	if fs.Exists(name, indexed) && !override {
+		return fmt.Errorf("file already exists")
+	}
+
+	path, err := filepath.Abs(filepath.Join(dir, name))
+	if err != nil {
+		return err
+	}
+
+	w, err := os.Create(path)
+	if err != nil {
+		return err
+	}
+	defer w.Close()
+
+	if _, err = f.Seek(0, io.SeekStart); err != nil {
+		return err
+	}
+
+	if _, err = io.Copy(w, f); err != nil {
+		return err
+	}
+
+	if timeTillDeath > 0 {
+		database.FileDeathUnix[path] = timeTillDeath
+	} else {
+		delete(database.FileDeathUnix, path)
+	}
+
+	if password != "" {
+		pass, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+
+		database.FilePasswords[path] = string(pass)
+	} else {
+		delete(database.FilePasswords, path)
+	}
+
+	if err = database.Save(); err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func (fs *FileSystem) Get(name string, index bool) (*File, error) {
-	return nil, nil // TODO
-}
+	dir := fs.SecretDir
+	if index {
+		dir = fs.IndexDir
+	}
 
-func (f *File) IsNamed() bool {
-	return f.HashHex != strings.TrimSuffix(f.Name, filepath.Ext(f.Name))
-}
+	f, err := FromFile(dir, name, index)
+	if err != nil {
+		return nil, err
+	}
 
-func (f *File) Delete() error {
-	return nil // TODO
-}
-
-func (f *File) HasPassword() bool {
-	return f.Password != ""
-}
-
-func (f *File) Unlock(pass string) bool {
-	return bcrypt.CompareHashAndPassword([]byte(f.Password), []byte(pass)) != nil
+	return f, nil
 }
 
 func filesFromDir(dir string, indexed bool, wg *errgroup.Group, files chan File) error {
-	database := db.Get()
-
 	err := godirwalk.Walk(dir, &godirwalk.Options{
 		Unsorted: true,
 		Callback: func(osPathname string, directoryEntry *godirwalk.Dirent) error {
@@ -104,34 +167,12 @@ func filesFromDir(dir string, indexed bool, wg *errgroup.Group, files chan File)
 					return nil
 				}
 
-				data, err := ioutil.ReadFile(osPathname)
+				f, err := FromFile(dir, directoryEntry.Name(), indexed)
 				if err != nil {
 					return err
 				}
 
-				sum := sha256.Sum256(data)
-
-				path := filepath.Join(dir, directoryEntry.Name())
-
-				deathUnix, ok := database.FileDeathUnix[path]
-				if !ok {
-					deathUnix = 0
-				}
-
-				pass, ok := database.FilePasswords[path]
-				if !ok {
-					pass = ""
-				}
-
-				f := File{
-					Name:      directoryEntry.Name(),
-					HashHex:   hex.EncodeToString(sum[:]),
-					Password:  pass,
-					DeathUnix: deathUnix,
-					Indexed:   indexed,
-				}
-
-				files <- f
+				files <- *f
 
 				return nil
 			})

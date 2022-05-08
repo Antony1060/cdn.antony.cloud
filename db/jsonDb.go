@@ -3,7 +3,6 @@ package db
 import (
 	"bufio"
 	"encoding/json"
-	"github.com/apex/log"
 	"os"
 	"path/filepath"
 )
@@ -30,11 +29,9 @@ func (db *Database) Save() error {
 
 	w := bufio.NewWriter(f)
 	defer w.Flush()
-	bytes, err := w.WriteString(string(j[:]))
-	if err != nil {
+	if _, err = w.WriteString(string(j[:])); err != nil {
 		return err
 	}
-	log.WithField("size", bytes).Info("Saved data")
 	return nil
 }
 
