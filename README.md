@@ -1,3 +1,6 @@
+A cdn thing
+
+## CLI options
 --index to show in global index
 
 --temporary deletes after x time
