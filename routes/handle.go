@@ -38,7 +38,7 @@ func (h *Handler) AddFile() fiber.Handler {
 		}
 
 		if err = h.CreateFile(f, args.Name, args.Password, args.TimeTillDeath, args.Index, args.Override); err != nil {
-			return err
+			return util.WrapFiberError(http.StatusBadRequest, err)
 		}
 
 		return util.Status(c, http.StatusOK)
