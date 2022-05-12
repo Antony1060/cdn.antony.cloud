@@ -7,8 +7,11 @@ import (
 	"cdn/routes"
 	"cdn/routes/middleware"
 	"cdn/util"
+	"encoding/base64"
 	"github.com/apex/log"
 	"github.com/gofiber/fiber/v2"
+	"golang.org/x/crypto/bcrypt"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -32,7 +35,49 @@ func loadRoutes(app *fiber.App, env *env.EnvConfig) {
 	app.Use(middleware.DefaultLogger)
 
 	nextFunc := func(c *fiber.Ctx) bool {
-		// TODO: handle password protected
+		relativePath := c.Path()
+		if !strings.HasPrefix(relativePath, "/secret") {
+			relativePath = "/index" + relativePath
+		}
+
+		fullPath, err := filepath.Abs("./files" + relativePath) // ikik, hard-coded values, will maybe fix later :/
+		if err != nil {
+			return true
+		}
+
+		target, ok := db.Get().FilePasswords[fullPath]
+		if !ok || target == "" {
+			return false
+		}
+
+		val, ok := c.GetReqHeaders()["Authorization"]
+		if !ok || !strings.HasPrefix(val, "Basic ") {
+			c.Append("WWW-Authenticate", "Basic realm=Forbidden")
+			_ = util.Status(c, http.StatusUnauthorized)
+			return true
+		}
+
+		basicAuth := strings.TrimPrefix(val, "Basic ")
+
+		decoded, err := base64.StdEncoding.DecodeString(basicAuth)
+		if err != nil {
+			return true
+		}
+
+		s := strings.SplitAfterN(string(decoded), ":", 2)
+		if len(s) < 2 {
+			c.Append("WWW-Authenticate", "Basic realm=Forbidden")
+			_ = util.Status(c, http.StatusUnauthorized)
+			return true
+		}
+
+		pass := s[1]
+		if bcrypt.CompareHashAndPassword([]byte(target), []byte(pass)) != nil {
+			c.Append("WWW-Authenticate", "Basic realm=Forbidden")
+			_ = util.Status(c, http.StatusUnauthorized)
+			return true
+		}
+
 		return false
 	}
 
@@ -74,7 +119,9 @@ func startServer(env *env.EnvConfig) {
 		ErrorHandler: func(c *fiber.Ctx, err error) error {
 			code := fiber.StatusInternalServerError
 
-			if e, ok := err.(*fiber.Error); ok {
+			if c.Context().Response.StatusCode() == http.StatusUnauthorized {
+				code = http.StatusUnauthorized
+			} else if e, ok := err.(*fiber.Error); ok {
 				code = e.Code
 			}
 

@@ -22,7 +22,6 @@ func DefaultLogger(c *fiber.Ctx) error {
 
 	f := log.Fields{
 		"client":  c.IP(),
-		"status":  c.Context().Response.StatusCode(),
 		"latency": latencyFormatted,
 	}
 

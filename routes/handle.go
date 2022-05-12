@@ -5,6 +5,7 @@ import (
 	"cdn/util"
 	"github.com/gofiber/fiber/v2"
 	"net/http"
+	"strings"
 )
 
 type addOpts struct {
@@ -27,7 +28,7 @@ type Handler struct {
 func (h *Handler) AddFile() fiber.Handler {
 	return func(c *fiber.Ctx) error {
 		f, err := c.FormFile("file")
-		if err != nil {
+		if err != nil || strings.Contains(f.Filename, "/") { // we don't allow / since filesystem paths
 			return util.WrapFiberError(http.StatusBadRequest, err)
 		}
 
