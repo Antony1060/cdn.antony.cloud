@@ -16,8 +16,13 @@ type File struct {
 	Path      string `json:"-"`
 	HashHex   string `json:"hash"`
 	Password  string `json:"-"`
-	DeathUnix int    `json:"deathUnix"`
+	DeathUnix int64  `json:"deathUnix"`
 	Indexed   bool   `json:"indexed"`
+	usable    bool   // tells if this structure still exists in the filesystem, Delete makes this unusable
+}
+
+func (f *File) IsUsable() bool {
+	return f.usable
 }
 
 func (f *File) IsNamed() bool {
@@ -25,7 +30,17 @@ func (f *File) IsNamed() bool {
 }
 
 func (f *File) Delete() error {
-	return os.RemoveAll(f.Path)
+	if err := os.RemoveAll(f.Path); err != nil {
+		return err
+	}
+
+	database := db.Get()
+	delete(database.FilePasswords, f.Path)
+	delete(database.FileDeathUnix, f.Path)
+
+	f.usable = false
+
+	return nil
 }
 
 func (f *File) HasPassword() bool {
@@ -73,6 +88,7 @@ func FromFile(dir, name string, index bool) (*File, error) {
 		Password:  pass,
 		DeathUnix: deathUnix,
 		Indexed:   index,
+		usable:    true,
 	}
 
 	return f, nil

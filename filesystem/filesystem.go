@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"github.com/apex/log"
 	"github.com/karrick/godirwalk"
 	"golang.org/x/crypto/bcrypt"
 	"golang.org/x/sync/errgroup"
@@ -12,24 +13,75 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"time"
 )
 
 type FileSystem struct {
-	IndexDir  string
-	SecretDir string
+	IndexDir     string
+	SecretDir    string
+	updateTicker *time.Ticker
 }
 
 type FileLookup struct {
-	Index  []File `json:"index"`
-	Secret []File `json:"secret"`
+	Index  []*File `json:"index"`
+	Secret []*File `json:"secret"`
+}
+
+func NewFileSystem(index, secret string) (*FileSystem, error) {
+	fs := &FileSystem{
+		IndexDir:  index,
+		SecretDir: secret,
+	}
+
+	fs.updateTicker = time.NewTicker(1 * time.Second)
+
+	// a cache for the ticker purposes, updates every 30 seconds
+	// this is here not to overload the IO, could also be implemented globally if necessary
+	cache, err := fs.GetAll()
+	if err != nil {
+		return nil, err
+	}
+
+	loopCount := int8(0)
+
+	go func() {
+		for {
+			select {
+			case <-fs.updateTicker.C:
+				loopCount = (loopCount + 1) % 30
+
+				if loopCount == 0 {
+					cache, err = fs.GetAll()
+					if err != nil {
+						log.WithError(err).Error("cache update failed")
+						return
+					}
+				}
+
+				nowUnix := time.Now().Unix()
+				for _, f := range append(cache.Index, cache.Secret...) {
+					if !f.IsUsable() || f.DeathUnix == 0 || nowUnix < f.DeathUnix {
+						continue
+					}
+
+					if err = f.Delete(); err != nil {
+						log.WithError(err).Error("temporary file delete failed")
+						continue
+					}
+				}
+			}
+		}
+	}()
+
+	return fs, nil
 }
 
 func (fs *FileSystem) GetAll() (*FileLookup, error) {
-	index := make([]File, 0)
-	secret := make([]File, 0)
+	index := make([]*File, 0)
+	secret := make([]*File, 0)
 
 	wg := new(errgroup.Group)
-	c := make(chan File)
+	c := make(chan *File)
 
 	if err := filesFromDir(fs.IndexDir, true, wg, c); err != nil {
 		return nil, err
@@ -73,7 +125,7 @@ func (fs *FileSystem) Exists(name string, index bool) bool {
 	return err == nil
 }
 
-func (fs *FileSystem) CreateFile(header *multipart.FileHeader, name, password string, timeTillDeath int, indexed, override bool) error {
+func (fs *FileSystem) CreateFile(header *multipart.FileHeader, name, password string, timeTillDeath int64, indexed, override bool) error {
 	database := db.Get()
 
 	dir := fs.SecretDir
@@ -158,7 +210,7 @@ func (fs *FileSystem) Get(name string, index bool) (*File, error) {
 	return f, nil
 }
 
-func filesFromDir(dir string, indexed bool, wg *errgroup.Group, files chan File) error {
+func filesFromDir(dir string, indexed bool, wg *errgroup.Group, files chan *File) error {
 	err := godirwalk.Walk(dir, &godirwalk.Options{
 		Unsorted: true,
 		Callback: func(osPathname string, directoryEntry *godirwalk.Dirent) error {
@@ -172,7 +224,7 @@ func filesFromDir(dir string, indexed bool, wg *errgroup.Group, files chan File)
 					return err
 				}
 
-				files <- *f
+				files <- f
 
 				return nil
 			})

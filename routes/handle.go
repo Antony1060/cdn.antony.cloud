@@ -9,7 +9,7 @@ import (
 
 type addOpts struct {
 	Index         bool   `json:"index" default:"false"`
-	TimeTillDeath int    `json:"timeTillDeath" default:"-1"`
+	TimeTillDeath int64  `json:"timeTillDeath" default:"-1"`
 	Name          string `json:"name" default:""`
 	Password      string `json:"password" default:""`
 	Override      bool   `json:"override" default:"false"`

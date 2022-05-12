@@ -49,12 +49,12 @@ func loadRoutes(app *fiber.App, env *env.EnvConfig) {
 		Next: nextFunc,
 	})
 
-	h := routes.Handler{
-		FileSystem: &filesystem.FileSystem{
-			IndexDir:  "./files/index",
-			SecretDir: "./files/secret",
-		},
+	fs, err := filesystem.NewFileSystem("./files/index", "./files/secret")
+	if err != nil {
+		panic("can't load filesystem") // eh :/
 	}
+
+	h := routes.Handler{FileSystem: fs}
 
 	api := app.Group("/api")
 	{
